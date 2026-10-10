@@ -1,0 +1,14 @@
+.build/
+.swiftpm/
+.DS_Store
+
+# Generated previews and retired bundles.
+shots-symlinker/
+shots/*
+!shots/fixtures/
+dist/*
+!dist/Symlinker.zip
+
+# Machine-specific connection settings.
+.mcp.json
+.cursor/mcp.json
