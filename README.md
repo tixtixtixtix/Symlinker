@@ -14,7 +14,7 @@ The current prebuilt bundle is in [dist/Symlinker.zip](dist/Symlinker.zip). Extr
 
 ## Developing
 
-This package uses the installed SDK at `/Users/dani/droppykit`. Update that dependency in `Package.swift` on another Mac, or use the public DroppyKit repository with `from: "1.8.0"`.
+This package uses the installed SDK at `/Users/user/droppykit`. Update that dependency in `Package.swift` on another Mac, or use the public DroppyKit repository with `from: "1.8.0"`.
 
 ```sh
 droppykit build
