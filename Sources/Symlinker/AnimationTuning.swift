@@ -1,25 +1,34 @@
 import Foundation
 
 struct AnimationTuning: Codable, Equatable, Sendable {
-    var stretchDuration = 0.28
-    var splitDuration = 0.15
-    var recoilDuration = 0.15
-    var settleDuration = 0.30
+    var stretchDuration = 0.34
+    var splitDuration = 0.22
+    var recoilDuration = 0.22
+    var settleDuration = 0.32
     var confirmationDuration = 0.50
     var finderDuration = 0.50
     var blur = 5.0
     var rebound = 2.2
-    var damping = 10.98
-    var squash = 0.18
+    var damping = 5.74
+    var squash = 0.20
     var splitSoftness = 0.03
-    var trails = 0.25
+    var trails = 0.0
     var totalDuration: Double { stretchDuration + splitDuration + recoilDuration + settleDuration }
     static let defaults = AnimationTuning()
     static let storageKey = "app.getdroppy.symlinker.animationTuning.v3"
+    private static let legacyDefaults: Self = {
+        var value = Self()
+        value.stretchDuration = 0.28; value.splitDuration = 0.15
+        value.recoilDuration = 0.15; value.settleDuration = 0.30
+        value.blur = 5; value.rebound = 2.2; value.damping = 10.98
+        value.squash = 0.18; value.splitSoftness = 0.03; value.trails = 0.25
+        return value
+    }()
     static func load() -> Self {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let value = try? JSONDecoder().decode(Self.self, from: data), value.isValid else { return defaults }
-        return value
+        // Adopt the new factory motion without replacing a user's tuned preset.
+        return value == legacyDefaults ? defaults : value
     }
     var isValid: Bool {
         [stretchDuration, splitDuration].allSatisfy { $0.isFinite && (0.05...2).contains($0) }
@@ -67,35 +76,43 @@ struct AnimationTuning: Codable, Equatable, Sendable {
         return cubic + (ease(t) - cubic) * softness
     }
     func returnAmount(at clock: CGFloat, delay: CGFloat = 0) -> CGFloat {
-        let recoil = ease((clock - 0.38 - delay) / (0.32 - delay))
-        guard clock > 0.70 else { return recoil }
-        let settle = ease((clock - 0.70) / 0.30)
-        return 1 + 0.028 * sin(2 * .pi * settle) * exp(-CGFloat(damping) * 0.35 * settle) * (1 - settle)
+        let t = min(1, max(0, (clock - 0.38 - delay) / (0.62 - delay)))
+        let decay = CGFloat(damping) * 0.85
+        let frequency = 7.5 + CGFloat(rebound) * 0.8
+        let residual = exp(-decay * t) * (cos(frequency * t) + decay / frequency * sin(frequency * t))
+        // Recoil and settling share one spring; the tail reaches rest with zero velocity.
+        return 1 - residual * (1 - ease((t - 0.65) / 0.35))
     }
     func reboundAmount(at clock: CGFloat, delay: CGFloat = 0) -> CGFloat {
-        let peak = CGFloat(rebound) * 0.42
-        guard clock > 0.70 else { return peak * ease((clock - 0.38 - delay) / (0.32 - delay)) }
-        let rawSettle = (clock - 0.70) / 0.30
-        let settle = ease(rawSettle)
-        // Spend the entire settle duration relaxing the tall/skinny peak and its overshoot.
-        return peak * cos(1.6 * .pi * settle) * exp(-CGFloat(damping) * 0.35 * settle)
-            * (1 - ease((rawSettle - 0.70) / 0.30))
+        let t = min(1, max(0, (clock - 0.38 - delay) / (0.62 - delay)))
+        let envelope = pow(sin(.pi * t), 2) * exp(-CGFloat(damping) * 0.25 * t)
+        return CGFloat(rebound) * 0.07 * envelope * cos(2 * .pi * t)
     }
-    // A monotone cubic clock map preserves velocity across independently timed phases.
+    // Scalar Hermite segments avoid allocating collections on every display frame.
     func visualClock(_ progress: CGFloat) -> CGFloat {
         let total = totalDuration
-        let knots: [Double] = [0, stretchDuration / total, (stretchDuration + splitDuration) / total,
-                               (stretchDuration + splitDuration + recoilDuration) / total, 1]
-        let values: [Double] = [0, 0.28, 0.38, 0.70, 1]
-        let slopes = (0..<4).map { (values[$0 + 1] - values[$0]) / (knots[$0 + 1] - knots[$0]) }
-        var tangents = [Double](repeating: 0, count: 5)
-        for i in 1..<4 { tangents[i] = 2 * slopes[i - 1] * slopes[i] / (slopes[i - 1] + slopes[i]) }
+        let a = stretchDuration / total
+        let b = (stretchDuration + splitDuration) / total
+        let c = (stretchDuration + splitDuration + recoilDuration) / total
+        let s0 = 0.28 / a
+        let s1 = 0.10 / (b - a)
+        let s2 = 0.32 / (c - b)
+        let s3 = 0.30 / (1 - c)
+        let m1 = 2 * s0 * s1 / (s0 + s1)
+        let m2 = 2 * s1 * s2 / (s1 + s2)
+        let m3 = 2 * s2 * s3 / (s2 + s3)
         let x = min(1, max(0, Double(progress)))
-        let i = (0..<4).first { x <= knots[$0 + 1] } ?? 3
-        let width = knots[i + 1] - knots[i]
-        let t = (x - knots[i]) / width
+        if x <= a { return segment(x, start: 0, end: a, from: 0, to: 0.28, incoming: 0, outgoing: m1) }
+        if x <= b { return segment(x, start: a, end: b, from: 0.28, to: 0.38, incoming: m1, outgoing: m2) }
+        if x <= c { return segment(x, start: b, end: c, from: 0.38, to: 0.70, incoming: m2, outgoing: m3) }
+        return segment(x, start: c, end: 1, from: 0.70, to: 1, incoming: m3, outgoing: 0)
+    }
+    private func segment(_ x: Double, start: Double, end: Double, from: Double, to: Double,
+                         incoming: Double, outgoing: Double) -> CGFloat {
+        let width = end - start
+        let t = (x - start) / width
         let t2 = t * t, t3 = t2 * t
-        return CGFloat((2*t3 - 3*t2 + 1) * values[i] + (t3 - 2*t2 + t) * width * tangents[i]
-                       + (-2*t3 + 3*t2) * values[i + 1] + (t3 - t2) * width * tangents[i + 1])
+        return CGFloat((2*t3 - 3*t2 + 1) * from + (t3 - 2*t2 + t) * width * incoming
+                       + (-2*t3 + 3*t2) * to + (t3 - t2) * width * outgoing)
     }
 }

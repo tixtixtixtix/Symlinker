@@ -43,8 +43,8 @@ struct AnimationPlaygroundView: View {
                         Text(demo.isCreating ? "Playing…" : "\(Int(demo.progress * 100))%")
                             .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
-                    Slider(value: Binding(get: { Double(demo.progress) }, set: { demo.scrub($0) }), in: 0...1)
-                        .disabled(demo.isCreating || reducedMotion)
+                    Slider(value: Binding(get: { Double(demo.progress) }, set: { demo.scrub($0, reducedMotion: reducedMotion) }), in: 0...1)
+                        .disabled(demo.isCreating)
                 }
                 Toggle("Preview Reduce Motion", isOn: $reducedMotion).toggleStyle(.checkbox)
                     .disabled(demo.isCreating)
@@ -61,8 +61,8 @@ struct AnimationPlaygroundView: View {
                         copied = true
                     }.buttonStyle(DroppyQuietButtonStyle(size: .small))
                     Spacer()
-                    Button("Reset defaults") { owner.tuning = .defaults }
-                        .buttonStyle(DroppyQuietButtonStyle(size: .small)).disabled(demo.isCreating)
+                    Button("Reset defaults") { owner.tuning = .defaults; copied = false }
+                        .buttonStyle(DroppyQuietButtonStyle(size: .small))
                 }
                 Text("Changes apply on the next replay and are saved for real links. Copy settings to share your preferred values.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -92,9 +92,14 @@ struct AnimationPlaygroundView: View {
         .background(.regularMaterial)
         .preferredColorScheme(.dark)
         .onChange(of: owner.tuning) { _, settings in
-            demo.tuning = settings; copied = false
+            demo.tuning = settings
+            if demo.isScrubbing { demo.scrub(Double(demo.progress), reducedMotion: reducedMotion) }
+            copied = false
         }
-        .onDisappear { playback?.cancel(); demo.deactivate() }
+        .onChange(of: reducedMotion) { _, value in
+            if demo.isScrubbing { demo.scrub(Double(demo.progress), reducedMotion: value) }
+        }
+        .onDisappear { playback?.cancel(); playback = nil; demo.deactivate() }
     }
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -115,6 +120,7 @@ struct AnimationPlaygroundView: View {
         playback?.cancel()
         playback = Task { @MainActor in
             repeat {
+                guard !Task.isCancelled else { return }
                 demo.tuning = owner.tuning
                 demo.replay(reducedMotion: reducedMotion)
                 do {
@@ -187,7 +193,7 @@ private struct AnimationParameterRow: View {
             Slider(value: $value, in: range).accessibilityLabel(title)
         }
         .onAppear { refresh() }
-        .onChange(of: value) { _, _ in if !isEditing { refresh() } }
+        .onChange(of: value) { _, _ in refresh() }
         .onChange(of: isEditing) { _, editing in if !editing { commit() } }
     }
     private func refresh() { draft = String(format: "%.2f", value) }

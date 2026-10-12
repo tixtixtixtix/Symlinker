@@ -14,7 +14,7 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     public nonisolated static let id: DropletID = "symlinker"
     @Published var tuning = AnimationTuning.load() { didSet { if !isDemo { tuning.save() } } }
     @Published var activeTuning: AnimationTuning?
-    var renderingTuning: AnimationTuning { isCreating ? activeTuning ?? tuning : tuning }
+    var renderingTuning: AnimationTuning { activeTuning ?? tuning }
     @Published var isScrubbing = false
     var isDemo = false
     private var playgroundWindow: NSWindow?
@@ -88,6 +88,7 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
             }
             if scoped { scopedURLs.append(url) }
             withAnimation(DroppyAnimation.stateEmphasis) {
+                activeTuning = nil
                 if choosingDestination { destination = url } else { source = url }
                 createdLink = nil; message = nil; progress = 0; settled = false; snapped = false; recoil = 0; rebound = 0; buttonConfirmed = false; buttonReady = false
             }
@@ -101,6 +102,7 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     func reset() {
         guard !isCreating, !isPicking else { return }
         withAnimation(DroppyAnimation.state) {
+            activeTuning = nil
             source = nil; destination = nil; createdLink = nil; message = nil; progress = 0; settled = false; snapped = false; recoil = 0; rebound = 0; buttonConfirmed = false; buttonReady = false
         }
         scopedURLs.forEach { $0.stopAccessingSecurityScopedResource() }; scopedURLs.removeAll()
@@ -108,6 +110,9 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     }
     func create(reducedMotion: Bool) {
         guard !isDemo, canCreate, let source, let destination else { return }
+        let settings = tuning
+        activeTuning = settings
+        continuousMotion = !reducedMotion
         isCreating = true; message = nil; settled = false; hold(true)
         operation = Task { [weak self] in
             guard let self else { return }
@@ -118,7 +123,7 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
                     try SymbolicLink.create(source: source, destination: destination)
                 }.value
                 guard !Task.isCancelled else { self.createdLink = link; self.buttonReady = true; self.buttonConfirmed = true; return }
-                try await self.animate(link: link, reducedMotion: reducedMotion, settings: self.tuning)
+                try await self.animate(link: link, reducedMotion: reducedMotion, settings: settings)
             } catch is CancellationError {
                 // Creation is atomic and must still be reflected after a cancelled animation.
                 let link = destination.appendingPathComponent(source.lastPathComponent)
@@ -131,13 +136,10 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     private func animate(link: URL, reducedMotion: Bool, settings: AnimationTuning) async throws {
         activeTuning = settings
         continuousMotion = !reducedMotion
-        try await Task.sleep(for: .milliseconds(16))
-        // Publish actual elapsed progress rather than an implicit animation target.
-        // Button and host transactions must never retime the tile sequence.
-        let tileDuration = reducedMotion ? 0.35 : settings.totalDuration
-        let splitTime = reducedMotion ? 0.35 : settings.stretchDuration + settings.splitDuration
-        let finderTime = splitTime + max(reducedMotion ? 0.192 : settings.recoilDuration, settings.confirmationDuration)
-        let endTime = max(tileDuration, finderTime + settings.finderDuration)
+        let timing = animationTiming(settings: settings, reducedMotion: reducedMotion)
+        let screen = playgroundWindow?.screen ?? NSScreen.main
+        let reportedRate = screen?.maximumFramesPerSecond ?? 60
+        let framesPerSecond = Double(min(120, max(30, reportedRate > 0 ? reportedRate : 60)))
         let clock = ContinuousClock()
         let start = clock.now
         while true {
@@ -146,15 +148,31 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
             let elapsed = Double(components.seconds) + Double(components.attoseconds) / 1e18
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
-            withTransaction(transaction) { progress = CGFloat(min(1, elapsed / tileDuration)) }
-            if elapsed >= splitTime && !snapped {
+            let nextProgress = CGFloat(min(1, elapsed / timing.tile))
+            if nextProgress != progress {
+                withTransaction(transaction) { progress = nextProgress }
+            }
+            if elapsed >= timing.split && !snapped {
                 snapped = true; createdLink = link; recoil = 1; settled = true
                 buttonConfirmed = true
             }
-            if elapsed >= finderTime && !buttonReady { buttonReady = true }
-            if elapsed >= endTime { break }
-            try await Task.sleep(for: .milliseconds(8))
+            if elapsed >= timing.finder && !buttonReady { buttonReady = true }
+            if elapsed >= timing.end { break }
+            // Deadlines stay on the initial clock grid; a late frame skips missed slots.
+            let nextFrame = floor(elapsed * framesPerSecond) + 1
+            let nextTime = elapsed >= timing.tile
+                ? (buttonReady ? timing.end : timing.finder)
+                : nextFrame / framesPerSecond
+            let deadline = start.advanced(by: .seconds(min(timing.end, nextTime)))
+            try await clock.sleep(until: deadline, tolerance: .milliseconds(1))
         }
+    }
+    private func animationTiming(settings: AnimationTuning, reducedMotion: Bool)
+        -> (tile: Double, split: Double, finder: Double, end: Double) {
+        let tile = reducedMotion ? 0.35 : settings.totalDuration
+        let split = reducedMotion ? 0.35 : settings.stretchDuration + settings.splitDuration
+        let finder = split + max(reducedMotion ? 0.192 : settings.recoilDuration, settings.confirmationDuration)
+        return (tile, split, finder, max(tile, finder + settings.finderDuration))
     }
     func configureDemo() {
         isDemo = true
@@ -163,10 +181,11 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     }
     func replay(reducedMotion: Bool = false) {
         guard isDemo, !isCreating else { return }
+        let settings = tuning
+        activeTuning = settings; continuousMotion = !reducedMotion
         isScrubbing = false; createdLink = nil; progress = 0; snapped = false; recoil = 0
         rebound = 0; buttonConfirmed = false; buttonReady = false; settled = false; message = nil
         isCreating = true
-        let settings = tuning
         let link = destination!.appendingPathComponent(source!.lastPathComponent)
         operation = Task { [weak self] in
             guard let self else { return }
@@ -175,16 +194,23 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
             catch { /* Demo cancellation never examines or touches the filesystem. */ }
         }
     }
-    func scrub(_ value: Double) {
+    func scrub(_ value: Double, reducedMotion: Bool = false) {
         guard isDemo, !isCreating else { return }
-        isScrubbing = true; continuousMotion = true
+        applyScrub(value, reducedMotion: reducedMotion)
+    }
+    private func applyScrub(_ value: Double, reducedMotion: Bool) {
+        let normalized = value.isFinite ? min(1, max(0, value)) : 0
+        let timing = animationTiming(settings: tuning, reducedMotion: reducedMotion)
+        let elapsed = normalized * timing.tile
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) {
-            progress = CGFloat(value)
-            let clock = tuning.visualClock(progress)
-            snapped = clock >= 0.38
+            activeTuning = nil
+            isScrubbing = true; continuousMotion = !reducedMotion
+            progress = CGFloat(normalized)
+            snapped = elapsed >= timing.split
             createdLink = snapped ? destination!.appendingPathComponent(source!.lastPathComponent) : nil
-            buttonConfirmed = snapped; buttonReady = clock >= 0.70
+            settled = snapped; recoil = snapped ? 1 : 0; rebound = 0
+            buttonConfirmed = snapped; buttonReady = elapsed >= timing.finder
         }
     }
     func openPlayground() {
@@ -307,6 +333,10 @@ public extension SymlinkerDroplet {
         guard state != "idle" else { return }
         self.source = source
         if state != "source" { self.destination = destination }
+        if state.hasPrefix("frame:"), let value = Double(state.dropFirst(6)), value.isFinite {
+            applyScrub(value, reducedMotion: false)
+            return
+        }
         if state == "mitosis" { isCreating = true; continuousMotion = true; progress = 0.29 }
         if state == "success" {
             createdLink = destination.appendingPathComponent(source.lastPathComponent)
