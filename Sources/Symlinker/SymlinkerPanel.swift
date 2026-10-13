@@ -136,6 +136,7 @@ private struct FileTile: View {
     @State private var targeted = false
     @State private var arrived = true
     @State private var dropTask: Task<Void, Never>?
+    @State private var dropEnabled = false
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
 
     var body: some View {
@@ -161,7 +162,7 @@ private struct FileTile: View {
                         .fill(AdaptiveColors.notchSurfaceCardFill)
                         .overlay {
                             RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous)
-                                .fill(targeted ? Color.mint.opacity(0.15) : Color.white.opacity(hover && !disabled ? 0.045 : 0))
+                                .fill(targeted && !disabled ? Color.mint.opacity(0.15) : Color.white.opacity(hover && !disabled ? 0.045 : 0))
                         }
                         .shadow(color: .black.opacity(0.14), radius: 6, y: 3)
                 }
@@ -175,22 +176,21 @@ private struct FileTile: View {
             .help(url?.path ?? title)
             .accessibilityLabel("\(caption): \(url?.lastPathComponent ?? title)")
             .accessibilityHint(linked ? "Reveal the symbolic link in Finder" : "Click to choose, or drop a \(caption == "Source" ? "file or folder" : "folder")")
-            .onDrop(of: [UTType.fileURL], isTargeted: $targeted) { providers in
-                guard !disabled, providers.count == 1, let provider = providers.first else { return false }
-                dropTask?.cancel()
-                dropTask = Task { @MainActor in
-                    let url: URL? = await withCheckedContinuation { continuation in
-                        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                            let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                            continuation.resume(returning: url)
-                        }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
+        .onDrop(of: [UTType.fileURL], isTargeted: $targeted) { providers in
+            guard !disabled, dropEnabled, providers.count == 1, let provider = providers.first else { return false }
+            dropTask?.cancel()
+            dropTask = Task { @MainActor in
+                let url: URL? = await withCheckedContinuation { continuation in
+                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
+                        continuation.resume(returning: error == nil ? Self.fileURL(from: item) : nil)
                     }
-                    guard !Task.isCancelled, let url else { return }
-                    drop(url)
                 }
-                return true
+                guard !Task.isCancelled, dropEnabled, !disabled, let url else { return }
+                drop(url)
             }
-
+            return true
         }
         .task(id: url) {
             // The mitosis already animates this copy into place.
@@ -200,10 +200,43 @@ private struct FileTile: View {
             guard !Task.isCancelled else { return }
             withAnimation(DroppyAnimation.stateEmphasis) { arrived = true }
         }
-        .onDisappear { dropTask?.cancel() }
+        .onAppear { dropEnabled = !disabled }
+        .onChange(of: disabled) { _, disabled in
+            dropEnabled = !disabled
+            if disabled {
+                targeted = false
+                dropTask?.cancel()
+            }
+        }
+        .onDisappear {
+            dropEnabled = false
+            dropTask?.cancel()
+        }
         .animation(DroppyAnimation.hover, value: hover)
         .animation(DroppyAnimation.stateEmphasis, value: targeted)
         .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+    }
+
+    nonisolated private static func fileURL(from item: NSSecureCoding?) -> URL? {
+        let candidate: URL?
+        if let url = item as? URL {
+            candidate = url
+        } else if let data = item as? Data {
+            candidate = URL(dataRepresentation: data, relativeTo: nil)
+                ?? String(data: data, encoding: .utf8).flatMap(fileURL(from:))
+        } else if let string = item as? String {
+            candidate = fileURL(from: string)
+        } else {
+            candidate = nil
+        }
+        guard let candidate, candidate.isFileURL, candidate.path.hasPrefix("/"),
+              candidate.host == nil || candidate.host == "" || candidate.host?.lowercased() == "localhost" else { return nil }
+        return candidate
+    }
+
+    nonisolated private static func fileURL(from string: String) -> URL? {
+        if string.hasPrefix("/") { return URL(fileURLWithPath: string) }
+        return URL(string: string)
     }
 }
 

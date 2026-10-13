@@ -44,7 +44,10 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     private var scopedURLs: [URL] = []
     var canCreate: Bool { source != nil && destination != nil && !isCreating && !isPicking && createdLink == nil }
 
-    public func activate(host: DropletHost) throws { self.host = host }
+    public func activate(host: DropletHost) throws {
+        self.host = host
+        host.shelf.setHoldsOpen(true)
+    }
     public func deactivate() {
         operation?.cancel(); operation = nil
         playgroundWindow?.close(); playgroundWindow = nil
@@ -59,7 +62,6 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     func reveal() {
         if !isDemo, let createdLink { NSWorkspace.shared.activateFileViewerSelecting([createdLink]) }
     }
-    func hold(_ value: Bool) { host?.shelf.setHoldsOpen(value) }
     func choose(destination choosingDestination: Bool) {
         guard !isDemo, !isCreating, !isPicking else { return }
         let panel = NSOpenPanel()
@@ -69,12 +71,12 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
         panel.resolvesAliases = false
-        picker = panel; isPicking = true; hold(true)
+        picker = panel; isPicking = true
         panel.begin { [weak self] response in
             Task { @MainActor in
                 guard let self else { return }
                 if response == .OK, let url = panel.url { self.select(url, destination: choosingDestination) }
-                self.picker = nil; self.isPicking = false; self.hold(false)
+                self.picker = nil; self.isPicking = false
             }
         }
     }
@@ -113,10 +115,10 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
         let settings = tuning
         activeTuning = settings
         continuousMotion = !reducedMotion
-        isCreating = true; message = nil; settled = false; hold(true)
+        isCreating = true; message = nil; settled = false
         operation = Task { [weak self] in
             guard let self else { return }
-            defer { self.isCreating = false; self.hold(false); self.operation = nil }
+            defer { self.isCreating = false; self.operation = nil }
             do {
                 // The filesystem succeeds before the visual confirmation begins.
                 let link = try await Task.detached(priority: .userInitiated) {
