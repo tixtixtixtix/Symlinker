@@ -1,0 +1,29 @@
+# Compatibility verification
+
+Checked on 2026-11-07.
+
+- Official Droppy nightly feed: <https://dl.getdroppy.app/app-releases/nightly/latest.json>.
+- Latest nightly and installed host: **16.2.1-nightly.26110601**, build **216212501.1**, published 2026-11-06.
+- SDK updated with `/Users/dani/droppykit/Scripts/droppykit update`, which fast-forwarded the clean official checkout from `4eee564` (API 1.20.1) to **1.22.0**, revision **c417d8a54cc45fb798b06b8a5b88dfa4761f5938** (`main`, also `v1.22.0`).
+- The official public SDK repository exposes no nightly branch or tag. The website documents 1.23.0 APIs not yet in that repository; do not treat those docs as an available matching nightly SDK. This package uses the newest publicly available SDK, not an invented nightly pin.
+- Installed Droppy Playground: **1.0.29**, build **10029**.
+
+The local-path dependency in `Package.swift` uses that SDK checkout directly. `kit.minAPI` remains 1.9.0 and `minAppVersion` remains 15.3.0: the controls and host services use existing APIs. No icon or surface changes are required. `clipboard-write` is declared for explicit Copy path / Copy settings actions; no clipboard history is read.
+
+The back circle is 36 × 36 points, matching the adjacent small action pill's 20-point label plus 8-point vertical padding on each side. Shared metrics budget the tiles, 36-point footer and host insets (160 points for the full active panel, 112 idle). No description/path row or selected-tile captions are shown; errors use the existing footer. **Create new symlink** clears both selections; **×** instead returns to the source and destination tiles with those selections preserved, matching `IMG_2332.HEIC`. Both leave the original file and created link untouched. Duplicate-name notices crossfade back into **Create symlink** after six visible seconds. Selections remain editable; retries revalidate and never replace existing items. Notice tasks stop on navigation, selection changes and deactivation.
+
+The installed Droppy already matches the current nightly feed, so no app update is necessary. For a later nightly, use Droppy's Settings → About update controls and select the Nightly channel, then approve the app's update prompt. Install the local bundle through Settings → Store → Local droplets and approve that build if prompted; restart Droppy if an earlier Symlinker build is already loaded. Do not disable local-build approval globally for testing.
+
+## Verification results
+
+- `swift test --scratch-path .build/tests-nightly`: 44 tests cover both reset paths, normal/reduced motion, request replacement/cancellation, typed providers, malformed drops, deadlines, lease counts, concurrent creation, packages, folder symlinks, moved sources, animation interruption, deactivation, timed duplicate notices/retries, expanded-surface auto-collapse suppression and host-service navigation/permissions. Mounted real widget-factory SwiftUI views to verify that the full editor acquires a hold, compact/preview mounts do not, and navigation releases it. See `.build/stability-tests.log` for the latest result.
+- `droppykit build`: universal arm64/x86_64 bundle at `.build/Symlinker.droplet`, correct resilient-framework linkage, and API audit confirming the newest required API is 1.9.0.
+- `droppykit validate`: passed.
+- Earlier harness passes are under `shots/nightly/` and `shots/selection-return/`. The stability/selection/shelf pass is under `shots/stability/`: 14 state reports have empty `problems`, null activation errors and all three declared surfaces provided. Reviewed shelf/expanded views across the three shapes, the warning and restored Create button, settings, Reduce Motion and `animation-playground.png`.
+- Compact-layout cleanup is under `shots/cleanup/`: six state reports have empty `problems`, null activation errors and every declared surface provided. Reviewed the ready shelf, ready/success/conflict/conflict-faded/error editor shots across all three shapes, and the resized animation preview. Rebuilt, validated and reinstalled successfully in Playground (PID 87577).
+- Expanded-editor auto-collapse suppression is verified by the descriptor regression test and `shots/stay-open/report.json` (no problems, no activation error, all declared surfaces provided). Reviewed the expanded shot; rebuilt, validated and loaded in Playground (PID 92287). Regular shelf holds remain work-scoped; manual dismissal is not suppressed.
+- The icon-opened full widget is a separate mount from the expanded surface. It now holds the shelf for its visible lifetime, releasing on navigation/close/deactivation; compact mounts still hold only for work. `shots/widget-stay-open/report.json` has no problems, null activation error and all declared surfaces provided. Reviewed the widget shot, rebuilt, validated and loaded in Playground (PID 93776).
+- Official `droppykit_install`: Playground 1.0.29 mapped the new bundle and logged `Droplet symlinker 1.1.0 activated`.
+- Separate native-arm64 `dlopen` smoke checks loaded each installed app's actual DroppyKit framework followed by the shipping Symlinker binary using `RTLD_NOW`, with no unresolved symbols. This checks nightly binary compatibility without installing or approving code inside the running Droppy app; it is not a nightly-app interaction test.
+
+Remaining manual checks: Finder drag cursor behavior and selection, keyboard/VoiceOver focus, host Home/close/resize and shelf-hold behavior during native pickers, external/network volumes, cloud-provider availability and macOS permission prompts. These require interactive checks on the target host; tests exercise the model, real temporary files and recorded host-service calls, not physical pointer/focus behavior. Install the new build into the Droppy nightly through Local droplets and approve it if prompted; it has not been installed into that running app automatically.

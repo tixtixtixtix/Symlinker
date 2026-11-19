@@ -19,7 +19,10 @@ let package = Package(
             name: "Symlinker",
             dependencies: [.product(name: "DroppyKit", package: "droppykit")]
         ),
-        .testTarget(name: "SymlinkerTests", dependencies: ["Symlinker"]),
+        .testTarget(name: "SymlinkerTests", dependencies: [
+            "Symlinker",
+            .product(name: "DroppyKitHarness", package: "droppykit")
+        ]),
         .executableTarget(
             name: "SymlinkerHarness",
             dependencies: [

@@ -12,7 +12,8 @@
   "minAppVersion": "15.3.0",
   "capabilities": [
     "expanded-surface",
-    "shelf-write"
+    "shelf-write",
+    "clipboard-write"
   ],
   "surfaces": [
     "shelf-widget",

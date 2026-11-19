@@ -5,6 +5,13 @@ import UniformTypeIdentifiers
 
 enum SymlinkerMetrics {
     static let tileHeight: CGFloat = 96
+    // The small accent pill's 20pt label plus 8pt vertical padding per side.
+    static let actionHeight: CGFloat = 36
+    static let inset: CGFloat = DroppySpacing.sm
+    static func panelHeight(hasFooter: Bool) -> CGFloat {
+        tileHeight + 2 * inset
+            + (hasFooter ? DroppySpacing.md + actionHeight : 0)
+    }
     static let tileGap: CGFloat = 80
     static let trackInset: CGFloat = 12
     static let trackHeight: CGFloat = 4
@@ -15,15 +22,19 @@ struct SymlinkerPanel: View {
     @ObservedObject var model: SymlinkerDroplet
     var isPreview = false
     var previewReducedMotion = false
+    var keepsShelfOpen = false
+    @State private var surfaceID = UUID()
     @Environment(\.accessibilityReduceMotion) private var systemReducedMotion
-    private var reducedMotion: Bool { systemReducedMotion || previewReducedMotion }
-    private var showFooter: Bool { model.hasSelectionPair || model.message != nil }
+    private var reducedMotion: Bool { systemReducedMotion || previewReducedMotion || model.reducesPreviewMotion }
+    private var showFooter: Bool { model.hasFooter }
+    private var interactionDisabled: Bool { !model.canInteract || isPreview }
+    private var showsConflictWarning: Bool { model.hasTimedConflict && model.conflictNoticeVisible }
 
     var body: some View {
         VStack(spacing: DroppySpacing.md) {
             GeometryReader { geometry in
                 let width = (geometry.size.width - SymlinkerMetrics.tileGap) / 2
-                let showsMitosis = (model.isCreating || model.isScrubbing) && !reducedMotion
+                let showsMitosis = (model.workState == .animating || model.isScrubbing) && !reducedMotion
                 ZStack(alignment: .topLeading) {
                     ConnectionTrack(progress: model.progress, fills: reducedMotion && (model.isCreating || model.isScrubbing) || model.createdLink != nil)
                         .frame(width: SymlinkerMetrics.tileGap - 2 * SymlinkerMetrics.trackInset,
@@ -33,15 +44,24 @@ struct SymlinkerPanel: View {
                         .opacity(showsMitosis ? 0 : 1)
                     HStack(alignment: .top, spacing: SymlinkerMetrics.tileGap) {
                         FileTile(url: model.source, title: "Choose source", caption: "Source", linked: false,
-                                 disabled: model.isDemo || model.isCreating || model.isPicking || isPreview,
-                                 select: { model.choose(destination: false) }, drop: { model.select($0, destination: false) })
+                                 disabled: interactionDisabled, loading: model.loadingRoles.contains(.source),
+                                 select: { model.choose(destination: false) },
+                                 drop: { model.acceptDrop($0, role: .source) },
+                                 clear: { model.clearSelection(.source) },
+                                 reveal: { if let url = model.source { model.reveal(url) } },
+                                 copy: { if let url = model.source { model.copyPath(url) } }, canCopy: model.canCopyPaths)
                             .frame(width: width)
-                        FileTile(url: model.createdLink == nil ? model.destination : model.source,
+                        FileTile(url: model.createdLink ?? model.destination,
                                  title: "Choose destination", caption: model.createdLink == nil ? "Destination" : "Symbolic link",
                                  linked: model.createdLink != nil,
-                                 disabled: model.isDemo || model.isCreating || model.isPicking || isPreview,
+                                  disabled: interactionDisabled, loading: model.loadingRoles.contains(.destination),
                                  select: { if model.createdLink != nil { model.reveal() } else { model.choose(destination: true) } },
-                                 drop: { model.select($0, destination: true) })
+                                  drop: { model.acceptDrop($0, role: .destination) },
+                                  clear: { model.clearSelection(.destination) },
+                                  reveal: { if let url = model.createdLink ?? model.destination { model.reveal(url) } },
+                                  copy: { if let url = model.createdLink ?? model.destination { model.copyPath(url) } },
+                                  canCopy: model.canCopyPaths,
+                                  change: { model.choose(destination: true) })
                             .frame(width: width)
                     }
                     .opacity(showsMitosis ? 0 : 1)
@@ -56,52 +76,88 @@ struct SymlinkerPanel: View {
                     }
                 }
             }.frame(height: SymlinkerMetrics.tileHeight)
-            if showFooter { footer.transition(DroppyTransition.element) }
+            if showFooter { footer.transition(reducedMotion ? .identity : DroppyTransition.element) }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .animation(DroppyAnimation.state, value: showFooter)
-        .animation(DroppyAnimation.state, value: model.buttonReady)
+        .animation(reducedMotion ? nil : DroppyAnimation.state, value: showFooter)
+        .animation(reducedMotion ? nil : DroppyAnimation.state, value: model.buttonReady)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Symlinker")
         .contextMenu {
-            if !model.isDemo { Button("Animation playground…") { model.openPlayground() } }
+            if !model.isDemo { Button("Animation playground…") { model.openPlayground() }.disabled(isPreview) }
         }
+        .onAppear { if !isPreview && !model.isDemo { model.editorVisibility(surfaceID, visible: true, keepsShelfOpen: keepsShelfOpen) } }
+        .onDisappear { if !isPreview && !model.isDemo { model.editorVisibility(surfaceID, visible: false) } }
+    }
+
+    private var errorMessage: String? {
+        if let message = model.message { return message }
+        if case .invalid(let message, _) = model.preflight { return message }
+        return nil
     }
 
     @ViewBuilder private var footer: some View {
-        if let message = model.message {
-            HStack(spacing: DroppySpacing.xsm) {
-                Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
-                Text(message).lineLimit(2)
-            }.font(.system(size: 11)).foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-                .accessibilityLabel("Unable to create link. \(message)")
-        } else {
-            HStack {
+            HStack(spacing: 0) {
                 if model.createdLink != nil && model.buttonReady {
-                    Button("Create new symlink") { model.reset() }
+                    Button("Create new symlink") { model.reset(reducedMotion: reducedMotion) }
                         .buttonStyle(DroppyQuietButtonStyle(size: .small))
-                        .disabled(model.isDemo || model.isCreating || model.isPicking || isPreview)
-                        .help("Clear this connection; the symbolic link stays on disk")
-                        .transition(DroppyTransition.element)
+                        .disabled(interactionDisabled)
+                        .help("Clear both selections; the symbolic link stays on disk")
+                        .transition(reducedMotion ? .identity : DroppyTransition.element)
+                } else if let errorMessage {
+                    Text(errorMessage)
+                        .font(.system(size: 11)).foregroundStyle(.orange)
+                        .lineLimit(2).help(errorMessage)
+                        .accessibilityLabel(errorMessage)
                 }
-                Spacer(minLength: DroppySpacing.sm)
-                Button {
-                    guard !model.isDemo, !isPreview, !model.isCreating, !model.isPicking else { return }
-                    if model.buttonReady { model.reveal() } else { model.create(reducedMotion: reducedMotion) }
-                } label: {
-                    SymlinkActionContent(reducedMotion: reducedMotion, phase: model.buttonReady ? 2 : model.buttonConfirmed ? 1 : 0)
+                Spacer(minLength: DroppySpacing.xsm)
+                HStack(spacing: DroppySpacing.sm) {
+                    Button {
+                        guard !interactionDisabled, !showsConflictWarning else { return }
+                        if model.buttonReady { model.reveal() } else { model.create(reducedMotion: reducedMotion) }
+                    } label: {
+                        ZStack {
+                            SymlinkActionContent(reducedMotion: reducedMotion, phase: model.buttonReady ? 2 : model.buttonConfirmed ? 1 : 0)
+                                .animation(.smooth(duration: model.renderingTuning.confirmationDuration), value: model.buttonConfirmed)
+                                .animation(.smooth(duration: model.renderingTuning.finderDuration), value: model.buttonReady)
+                                .foregroundStyle(model.buttonConfirmed ? Color.green : AdaptiveColors.notchSurfacePrimaryText)
+                                .opacity(showsConflictWarning || model.workState == .creating ? 0 : 1)
+                                .accessibilityHidden(showsConflictWarning || model.workState == .creating)
+                            if model.workState == .creating {
+                                HStack(spacing: DroppySpacing.xsm) {
+                                    ProgressView().controlSize(.mini)
+                                    Text("Creating…")
+                                }
+                                .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                            }
+                            Label("Name already exists", systemImage: "exclamationmark.circle")
+                                .font(.system(size: 11, weight: .semibold)).foregroundStyle(.orange)
+                                .opacity(showsConflictWarning ? 1 : 0).accessibilityHidden(!showsConflictWarning)
+                        }
                         .frame(width: 124, height: 20)
-                        .animation(.smooth(duration: model.renderingTuning.confirmationDuration), value: model.buttonConfirmed)
-                        .animation(.smooth(duration: model.renderingTuning.finderDuration), value: model.buttonReady)
-                        .foregroundStyle(model.buttonConfirmed ? Color.green : AdaptiveColors.notchSurfacePrimaryText)
+                        .animation(DroppyAnimation.state, value: showsConflictWarning)
+                    }
+                    .buttonStyle(DroppyAccentButtonStyle(color: showsConflictWarning ? .orange : model.buttonConfirmed ? .green : .white, size: .small))
+                    // The filesystem and animation phases both reject repeat activation.
+                    .disabled(interactionDisabled || (!model.canAttemptCreation && !model.buttonReady && !model.isCreating))
+                    .allowsHitTesting(!interactionDisabled && !showsConflictWarning)
+                    .accessibilityRespondsToUserInteraction(!interactionDisabled && !showsConflictWarning)
+                    .help(model.buttonReady ? "Reveal the created symbolic link in Finder" : showsConflictWarning ? "Change the source or destination. Existing items are never replaced." : "Create a symbolic link without replacing existing items")
+                    .keyboardShortcut(model.isDemo || isPreview ? nil : KeyboardShortcut(.return, modifiers: []))
+                    .animation(reducedMotion ? nil : DroppyAnimation.stateEmphasis, value: model.buttonConfirmed)
+                    .animation(DroppyAnimation.state, value: showsConflictWarning)
+                    if model.createdLink != nil && model.buttonReady {
+                        Button { model.reset(keepingSelections: true, reducedMotion: reducedMotion) } label: {
+                            Image(systemName: "xmark")
+                        }
+                        .buttonStyle(DroppyCircleButtonStyle(size: SymlinkerMetrics.actionHeight))
+                        .disabled(interactionDisabled)
+                        .accessibilityLabel("Back to source and destination")
+                        .help("Return to the selected source and destination; the symbolic link stays on disk")
+                        .transition(reducedMotion ? .identity : DroppyTransition.element)
+                    }
                 }
-                .buttonStyle(DroppyAccentButtonStyle(color: model.buttonConfirmed ? .green : .white, size: .small))
-                // Keep the glass and its ink intact while ignoring repeat presses.
-                .allowsHitTesting(!model.isDemo && !model.isCreating && !model.isPicking && !isPreview)
-                .accessibilityRespondsToUserInteraction(!model.isCreating && !model.isPicking && !isPreview)
-                .keyboardShortcut(model.isDemo ? nil : KeyboardShortcut(.return, modifiers: []))
-                .animation(DroppyAnimation.stateEmphasis, value: model.buttonConfirmed)
-            }.frame(height: 32)
-        }
+            }.frame(height: SymlinkerMetrics.actionHeight)
     }
 }
 
@@ -119,7 +175,7 @@ private struct ConnectionTrack: View, Animatable {
                     }
                 }
         }
-        .accessibilityLabel("Connection progress")
+        .accessibilityLabel("Link animation progress")
         .accessibilityValue("\(Int(min(max(progress, 0), 1) * 100)) percent")
     }
 }
@@ -130,19 +186,23 @@ private struct FileTile: View {
     let caption: String
     let linked: Bool
     let disabled: Bool
+    var loading = false
     let select: () -> Void
-    let drop: (URL) -> Void
+    let drop: ([NSItemProvider]) -> Bool
+    let clear: () -> Void
+    let reveal: () -> Void
+    let copy: () -> Void
+    var canCopy = false
+    var change: (() -> Void)? = nil
     @State private var hover = false
     @State private var targeted = false
     @State private var arrived = true
-    @State private var dropTask: Task<Void, Never>?
-    @State private var dropEnabled = false
     @Environment(\.accessibilityReduceMotion) private var reducedMotion
 
     var body: some View {
         VStack(spacing: DroppySpacing.sm) {
             Button(action: select) {
-                VStack(spacing: DroppySpacing.sm) {
+                VStack(spacing: DroppySpacing.xsm) {
                     if let url {
                         FileGlyph(url: url, linked: linked).frame(height: 40)
                         Text(url.lastPathComponent).font(.system(size: 11, weight: .medium))
@@ -173,88 +233,69 @@ private struct FileTile: View {
                          y: reducedMotion ? 1 : arrived ? 1 : 1.02)
             .scaleEffect(targeted && !disabled && !reducedMotion ? 1.025 : 1)
             .onHover { hover = $0 }
-            .help(url?.path ?? title)
+            .overlay(alignment: .topTrailing) {
+                if loading { ProgressView().controlSize(.mini).padding(DroppySpacing.sm).accessibilityLabel("Loading \(caption.lowercased())") }
+            }
+            .help(url.map { "\(caption): \($0.path)" } ?? title)
             .accessibilityLabel("\(caption): \(url?.lastPathComponent ?? title)")
             .accessibilityHint(linked ? "Reveal the symbolic link in Finder" : "Click to choose, or drop a \(caption == "Source" ? "file or folder" : "folder")")
+            .accessibilityValue(url?.path ?? "Not selected")
+            .contextMenu {
+                if !disabled {
+                    Button("Change \(caption == "Source" ? "source" : "destination")…", action: change ?? select)
+                    if url != nil {
+                        Button("Clear selection", action: clear)
+                        Divider()
+                        Button("Show in Finder", action: reveal)
+                        Button("Copy path", action: copy)
+                            .disabled(!canCopy)
+                            .help(canCopy ? "Copy the full path" : "Allow clipboard access for Symlinker to copy paths")
+                    }
+                }
+            }
         }
         .contentShape(RoundedRectangle(cornerRadius: DroppyRadius.large, style: .continuous))
         .onDrop(of: [UTType.fileURL], isTargeted: $targeted) { providers in
-            guard !disabled, dropEnabled, providers.count == 1, let provider = providers.first else { return false }
-            dropTask?.cancel()
-            dropTask = Task { @MainActor in
-                let url: URL? = await withCheckedContinuation { continuation in
-                    provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
-                        continuation.resume(returning: error == nil ? Self.fileURL(from: item) : nil)
-                    }
-                }
-                guard !Task.isCancelled, dropEnabled, !disabled, let url else { return }
-                drop(url)
-            }
-            return true
+            guard !disabled else { return false }
+            targeted = false
+            return drop(providers)
         }
         .task(id: url) {
             // The mitosis already animates this copy into place.
-            guard !linked else { arrived = true; return }
+            guard !linked, !reducedMotion else { arrived = true; return }
             arrived = false
             do { try await Task.sleep(for: .milliseconds(30)) } catch { return }
             guard !Task.isCancelled else { return }
             withAnimation(DroppyAnimation.stateEmphasis) { arrived = true }
         }
-        .onAppear { dropEnabled = !disabled }
         .onChange(of: disabled) { _, disabled in
-            dropEnabled = !disabled
-            if disabled {
-                targeted = false
-                dropTask?.cancel()
-            }
+            if disabled { targeted = false }
         }
-        .onDisappear {
-            dropEnabled = false
-            dropTask?.cancel()
-        }
-        .animation(DroppyAnimation.hover, value: hover)
-        .animation(DroppyAnimation.stateEmphasis, value: targeted)
+        .onDisappear { targeted = false }
+        .animation(reducedMotion ? nil : DroppyAnimation.hover, value: hover)
+        .animation(reducedMotion ? nil : DroppyAnimation.stateEmphasis, value: targeted)
         .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
     }
 
-    nonisolated private static func fileURL(from item: NSSecureCoding?) -> URL? {
-        let candidate: URL?
-        if let url = item as? URL {
-            candidate = url
-        } else if let data = item as? Data {
-            candidate = URL(dataRepresentation: data, relativeTo: nil)
-                ?? String(data: data, encoding: .utf8).flatMap(fileURL(from:))
-        } else if let string = item as? String {
-            candidate = fileURL(from: string)
-        } else {
-            candidate = nil
-        }
-        guard let candidate, candidate.isFileURL, candidate.path.hasPrefix("/"),
-              candidate.host == nil || candidate.host == "" || candidate.host?.lowercased() == "localhost" else { return nil }
-        return candidate
-    }
-
-    nonisolated private static func fileURL(from string: String) -> URL? {
-        if string.hasPrefix("/") { return URL(fileURLWithPath: string) }
-        return URL(string: string)
-    }
 }
 
 @MainActor
 private final class FileArtwork: ObservableObject {
     @Published private(set) var image: NSImage
-    private var url: URL
+    private var loadedURL: URL?
+    private var requestID = UUID()
+    private struct Artwork: @unchecked Sendable { let image: NSImage }
     init(url: URL) {
-        self.url = url
-        image = Self.image(for: url)
+        image = NSImage(systemSymbolName: url.hasDirectoryPath ? "folder" : "doc", accessibilityDescription: nil) ?? NSImage()
     }
-    func refresh(_ newURL: URL) {
-        guard url != newURL else { return }
-        url = newURL
-        image = Self.image(for: newURL)
-    }
-    private static func image(for url: URL) -> NSImage {
-        url.hasDirectoryPath ? NSWorkspace.shared.icon(for: .folder) : NSWorkspace.shared.icon(forFile: url.path)
+    func refresh(_ url: URL) async {
+        guard loadedURL != url else { return }
+        let id = UUID(); requestID = id
+        let artwork = try? await FileIO.run {
+            Artwork(image: url.hasDirectoryPath ? NSWorkspace.shared.icon(for: .folder) : NSWorkspace.shared.icon(forFile: url.path))
+        }
+        guard !Task.isCancelled, requestID == id, let artwork else { return }
+        loadedURL = url; image = artwork.image
     }
 }
 
@@ -278,7 +319,7 @@ private struct FileGlyph: View {
                         .offset(x: 5, y: 3).transition(.scale.combined(with: .opacity))
                 }
             }
-            .onChange(of: url) { _, newURL in artwork.refresh(newURL) }
+            .task(id: url) { await artwork.refresh(url) }
     }
 }
 
@@ -505,7 +546,7 @@ private struct SymlinkActionContent: View, Animatable {
     nonisolated var animatableData: CGFloat { get { phase } set { phase = newValue } }
     var body: some View {
         ZStack {
-            label("Create Symlink", symbol: "link", at: 0)
+            label("Create symlink", symbol: "link", at: 0)
             label("Created", symbol: "checkmark", at: 1)
             label("Show in Finder", symbol: "folder", at: 2)
         }

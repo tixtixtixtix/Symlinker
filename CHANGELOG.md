@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+- Keep both the icon-opened full widget and expanded editor open for Finder drops, releasing holds on navigation/close without pinning the compact shelf widget.
+- Share off-main-thread validation between native pickers and Finder drops, with stale-request protection, drop cancellation/deadlines, balanced access leases and targeted recovery.
+- Check the proposed output before creation; detect existing links without overwriting anything and revalidate at the final filesystem operation.
+- Crossfade duplicate-name warnings back into Create symlink after six visible seconds; keep the selections editable and revalidate every retry.
+- Keep full paths in tooltips/accessibility and native change/clear/reveal/copy context menus, without extra descriptions or tile captions.
+- Restore the compact two-tile editor with buttons directly underneath; show errors within the existing footer.
+- Replace the paired widget's static launcher with session status, selected paths, per-role drops, Continue and Finder reveal.
+- Preserve sessions across host navigation, ignore duplicate editor presentations and hold the shelf only while work needs it.
+- Keep successful filesystem results when an animation is interrupted; reject late callbacks after deactivation.
+- Use the host clipboard permission for explicit copy actions and share editor/animation-preview layout metrics.
+- Expand regression coverage to selection races, provider deadlines, filesystem conflicts, lifecycle and host navigation/permissions.
+- Update development and verification to the latest public DroppyKit SDK and current Droppy nightly.
+- Keep Create new symlink as a separate reset action and add an equally tall circular X beside Show in Finder to return to the selected source and destination.
+- Clear transient animation state on reset, respect Reduce Motion during reset transitions, and test creating another link without disturbing the first.
+
 ## 1.3.5 — 2026-10-10
 
 - Apply the selected 0.28-second stretch and 0.88-second tile sequence.

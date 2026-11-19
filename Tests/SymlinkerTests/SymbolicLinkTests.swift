@@ -68,12 +68,14 @@ struct SymlinkerFlowTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let source = root.appendingPathComponent("Original.txt")
         try Data("original".utf8).write(to: source)
-        let model = SymlinkerDroplet()
+        let model = SymlinkerDroplet(tuning: .defaults)
         #expect(model.panelHeight == 112)
         model.select(source, destination: false)
+        await model.waitForSelections()
         #expect(model.panelHeight == 112)
         model.select(destination, destination: true)
-        #expect(model.panelHeight == 156)
+        await model.waitForSelections()
+        #expect(model.panelHeight == 160)
         model.create(reducedMotion: reducedMotion)
         model.create(reducedMotion: reducedMotion) // Repeat presses cannot create a second operation.
         for _ in 0..<100 where !model.buttonConfirmed { try await Task.sleep(for: .milliseconds(30)) }
@@ -81,12 +83,125 @@ struct SymlinkerFlowTests {
         #expect(!model.buttonReady)
         for _ in 0..<100 where model.isCreating { try await Task.sleep(for: .milliseconds(30)) }
         #expect(model.buttonReady)
+        #expect(!model.isCreating)
         #expect(model.message == nil)
         let link = try #require(model.createdLink)
-        model.reset()
+        model.reset(reducedMotion: reducedMotion)
         #expect(model.source == nil && model.destination == nil && !model.buttonReady)
+        #expect(model.createdLink == nil && model.message == nil && model.activeTuning == nil)
+        #expect(!model.buttonConfirmed && !model.settled && !model.snapped)
+        #expect(!model.isScrubbing && !model.continuousMotion)
+        #expect(model.progress == 0 && model.recoil == 0 && model.rebound == 0)
+        #expect(!model.hasSelectionPair && !model.canCreate)
         #expect(model.panelHeight == 112)
         #expect(try String(contentsOf: link, encoding: .utf8) == "original")
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == source.path)
+        #expect(try String(contentsOf: source, encoding: .utf8) == "original")
+
+        let nextSource = root.appendingPathComponent("Another.txt")
+        try Data("another".utf8).write(to: nextSource)
+        model.select(nextSource, destination: false)
+        model.select(destination, destination: true)
+        await model.waitForSelections()
+        #expect(model.canCreate)
+        model.create(reducedMotion: reducedMotion)
+        for _ in 0..<100 where model.isCreating { try await Task.sleep(for: .milliseconds(30)) }
+        #expect(!model.isCreating && model.buttonReady && model.message == nil)
+        let nextLink = try #require(model.createdLink)
+        #expect(nextLink != link)
+        #expect(try String(contentsOf: nextLink, encoding: .utf8) == "another")
+        #expect(try String(contentsOf: link, encoding: .utf8) == "original")
+    }
+
+    @Test(arguments: [false, true])
+    func backToSelectionsPreservesPairAndExistingLink(reducedMotion: Bool) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let destination = root.appendingPathComponent("Destination")
+        let nextDestination = root.appendingPathComponent("Next destination")
+        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: nextDestination, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("Original.txt")
+        try Data("original".utf8).write(to: source)
+        let model = SymlinkerDroplet(tuning: .defaults)
+        model.select(source, destination: false)
+        model.select(destination, destination: true)
+        await model.waitForSelections()
+        let link = try SymbolicLink.create(source: source, destination: destination)
+        model.createdLink = link; model.buttonReady = true; model.buttonConfirmed = true
+        model.activeTuning = .defaults; model.progress = 1
+        model.settled = true; model.snapped = true; model.recoil = 1; model.rebound = 1
+        model.isScrubbing = true; model.continuousMotion = true
+
+        model.reset(keepingSelections: true, reducedMotion: reducedMotion)
+        await model.waitForSelections()
+        #expect(model.source == source && model.destination == destination)
+        #expect(model.hasSelectionPair && !model.canCreate)
+        #expect(model.existingLink == link)
+        #expect(model.panelHeight == 160)
+        #expect(model.createdLink == nil && model.message == nil && model.activeTuning == nil)
+        #expect(!model.buttonReady && !model.buttonConfirmed && !model.settled && !model.snapped)
+        #expect(!model.isScrubbing && !model.continuousMotion)
+        #expect(model.progress == 0 && model.recoil == 0 && model.rebound == 0)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == source.path)
+        #expect(try String(contentsOf: source, encoding: .utf8) == "original")
+
+        // Returning to the pair never silently overwrites the link if Create is pressed again.
+        model.create(reducedMotion: reducedMotion)
+        for _ in 0..<100 where model.isCreating { try await Task.sleep(for: .milliseconds(30)) }
+        await model.waitForSelections()
+        #expect(!model.isCreating && model.message == nil && model.existingLink == link)
+        #expect(try FileManager.default.destinationOfSymbolicLink(atPath: link.path) == source.path)
+
+        // The user can change just the destination and reuse the selected source.
+        model.select(nextDestination, destination: true)
+        await model.waitForSelections()
+        model.create(reducedMotion: reducedMotion)
+        for _ in 0..<100 where model.isCreating { try await Task.sleep(for: .milliseconds(30)) }
+        #expect(!model.isCreating && model.buttonReady && model.message == nil)
+        #expect(model.createdLink == nextDestination.appendingPathComponent(source.lastPathComponent))
+        #expect(try String(contentsOf: link, encoding: .utf8) == "original")
+        model.reset(reducedMotion: reducedMotion)
+        #expect(model.source == nil && model.destination == nil)
+        #expect(try String(contentsOf: link, encoding: .utf8) == "original")
+    }
+
+    @Test func resetClearsErrorsAndTransientAnimationState() {
+        let model = SymlinkerDroplet()
+        model.message = "Previous error"
+        model.activeTuning = .defaults
+        model.isScrubbing = true; model.continuousMotion = true
+        model.progress = 0.5; model.recoil = 1; model.rebound = 1
+        model.settled = true; model.snapped = true
+        model.buttonConfirmed = true; model.buttonReady = true
+        model.reset()
+        model.reset() // Reset is safe to repeat.
+        #expect(model.message == nil && model.activeTuning == nil)
+        #expect(!model.isScrubbing && !model.continuousMotion)
+        #expect(model.progress == 0 && model.recoil == 0 && model.rebound == 0)
+        #expect(!model.settled && !model.snapped && !model.buttonConfirmed && !model.buttonReady)
+        #expect(model.panelHeight == 112)
+    }
+
+    @Test func resetRefusesCreationPickingAndDemo() {
+        let model = SymlinkerDroplet()
+        let source = URL(fileURLWithPath: "/Symlinker preview/Original.txt")
+        model.source = source
+        model.createdLink = URL(fileURLWithPath: "/Symlinker preview/Workspace/Original.txt")
+        model.buttonReady = true
+        model.isCreating = true
+        model.reset()
+        model.reset(keepingSelections: true)
+        #expect(model.source == source && model.isCreating)
+        model.isCreating = false; model.isPicking = true
+        model.reset()
+        model.reset(keepingSelections: true)
+        #expect(model.source == source && model.isPicking)
+        model.isPicking = false; model.configureDemo()
+        let demoSource = model.source
+        model.reset()
+        model.reset(keepingSelections: true)
+        #expect(model.source == demoSource && model.destination != nil)
     }
 }
 

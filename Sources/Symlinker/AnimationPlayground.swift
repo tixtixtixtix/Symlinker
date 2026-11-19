@@ -18,7 +18,8 @@ struct AnimationPlaygroundView: View {
     }
     var body: some View {
         HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 18) {
+            ScrollView {
+            VStack(alignment: .leading, spacing: DroppySpacing.md) {
                 Text("Animation preview").font(.title2.weight(.semibold))
                 Text("Replay as often as you like. No files or symbolic links are created.")
                     .font(.callout).foregroundStyle(.secondary)
@@ -27,8 +28,8 @@ struct AnimationPlaygroundView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(.white.opacity(0.06)).frame(width: 150, height: 20)
                     SymlinkerPanel(model: demo, previewReducedMotion: reducedMotion)
-                        .frame(width: 352, height: 156).padding(.top, 38)
-                }.frame(width: 384, height: 220)
+                        .frame(width: 352, height: demo.panelHeight).padding(.top, 38)
+                }.frame(width: 384, height: SymlinkerMetrics.panelHeight(hasFooter: true) + 54)
                 HStack {
                     Button { play() } label: { Label("Replay animation", systemImage: "play.fill") }
                         .buttonStyle(DroppyAccentButtonStyle(color: .white, size: .small))
@@ -56,16 +57,16 @@ struct AnimationPlaygroundView: View {
                 Spacer(minLength: 0)
                 HStack {
                     Button(copied ? "Copied" : "Copy settings") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(owner.tuning.summary, forType: .string)
-                        copied = true
+                        copied = owner.copyText(owner.tuning.summary)
                     }.buttonStyle(DroppyQuietButtonStyle(size: .small))
+                        .disabled(!owner.canCopyPaths)
                     Spacer()
                     Button("Reset defaults") { owner.tuning = .defaults; copied = false }
                         .buttonStyle(DroppyQuietButtonStyle(size: .small))
                 }
                 Text("Changes apply on the next replay and are saved for real links. Copy settings to share your preferred values.")
                     .font(.caption).foregroundStyle(.secondary)
+            }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(width: 384)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
