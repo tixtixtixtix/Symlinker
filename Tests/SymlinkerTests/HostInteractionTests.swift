@@ -111,9 +111,9 @@ struct HostInteractionTests {
         let model = SymlinkerDroplet()
         let session = try session(for: model)
         defer { session.deactivate() }
-        let context = ShelfWidgetContext(availableSize: CGSize(width: isPaired ? 210 : 352, height: 160), isPaired: isPaired)
+        let context = ShelfWidgetContext(availableSize: CGSize(width: isPaired ? 210 : SymlinkerMetrics.soloWidth, height: 164), isPaired: isPaired)
         let view = NSHostingView(rootView: model.makeWidgetView("symlinker", context: context))
-        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: context.availableSize.width, height: 160), styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = NSWindow(contentRect: NSRect(x: -30_000, y: -30_000, width: context.availableSize.width, height: 164), styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = view
         window.orderFront(nil)

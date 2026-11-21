@@ -6,7 +6,7 @@ Click or drop one source file/folder and one destination folder. **Create Symlin
 
 The creation animation dissolves the destination, overlaps the original and duplicate, stretches across both tiles, and splits into two rounded rectangles. An elapsed-time clock, independent of button transitions, drives staggered spring recoil, tall and skinny rebound, restrained motion trails, and blur that resolves to sharp resting tiles. The badge and track appear during the settle; the action label blurs and slides through confirmation into Show in Finder. With Reduce Motion, the tiles remain still and the center track fills instead.
 
-The action button confirms with a green checkmark before turning into **Show in Finder**. **Create new symlink** clears both selections. The equally tall circular **×** immediately to the right of **Show in Finder** instead returns to the selected source and destination tiles. Both actions leave the created link and its source on disk. A duplicate-name warning temporarily occupies the action button, then crossfades back to **Create symlink** after six seconds. The tiles remain editable throughout. Every retry revalidates the paths and never overwrites an existing item.
+The action button confirms with a green checkmark before turning into **Show in Finder**. **+ New symlink** matches its size and clears both selections. The equally tall circular **<** button on the leading edge instead returns to the selected source and destination tiles without shifting **Show in Finder**. Both actions leave the created link and its source on disk. A duplicate-name warning temporarily occupies the action button, then crossfades back to **Create symlink** after six seconds. The tiles remain editable throughout. Every retry revalidates the paths and never overwrites an existing item.
 
 ## Selecting and dropping
 
@@ -19,7 +19,7 @@ The action button confirms with a green checkmark before turning into **Show in 
 
 ## Shelf and navigation
 
-The paired widget shows the current status, source and destination, a Continue action, and Finder reveal when a result is available. Its source and destination rows also accept Finder drops. The full two-tile editor remains a separate composition.
+The paired shelf widget uses two vertical tiles styled with a blue active-step highlight, an animated green confirmation transition (**Create symlink** → **Created** → **Show in Finder**), and a circular **+** button to clear selections and start a new symlink at any time (files and created symlinks remain on disk). Right-click either tile for change, clear, Finder reveal, copy path, or **Open full editor…**. The full two-tile animated editor remains a separate composition.
 
 Home, close and reopening preserve the current in-memory session. Duplicate editor requests are ignored. The full two-tile widget opened from its icon stays open for dragging files, releasing its hold on Home, close or deactivation. The compact shelf widget holds only during picking, loading and creation; enabling Symlinker alone does not pin the shelf open. Leaving during the confirmation animation settles the already-created result instead of losing it.
 
@@ -44,7 +44,7 @@ swift test
 
 Build distributables with `droppykit build` to link Droppy's resilient SDK. The icon's scaffold blue has been replaced with neutral gray. Creator metadata and avatar remain placeholders for local development.
 
-Preview states are supported by the debug harness through `SYMLINKER_PREVIEW_STATE` and `SYMLINKER_PREVIEW_DIRECTORY`; they never create a link. States include `source`, `destination`, `ready`, `mitosis`, `snapped`, `rebound`, `confirmed`, `success`, `returned` (after pressing ×), `conflict`, `conflict-faded`, `checking`, and `error`. Append `:reduced` to exercise Reduce Motion. New stability screenshots and reports live under `shots/stability/`.
+Preview states are supported by the debug harness through `SYMLINKER_PREVIEW_STATE` and `SYMLINKER_PREVIEW_DIRECTORY`; they never create a link. States include `source`, `destination`, `loading`, `ready`, `mitosis`, `snapped`, `rebound`, `confirmed`, `success`, `returned` (after pressing <), `conflict`, `conflict-faded`, `checking`, and `error`. Append `:reduced` to exercise Reduce Motion. New stability screenshots and reports live under `shots/stability/`.
 
 ## Animation playground
 

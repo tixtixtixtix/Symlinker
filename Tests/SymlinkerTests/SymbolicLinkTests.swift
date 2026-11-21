@@ -75,7 +75,7 @@ struct SymlinkerFlowTests {
         #expect(model.panelHeight == 112)
         model.select(destination, destination: true)
         await model.waitForSelections()
-        #expect(model.panelHeight == 160)
+        #expect(model.panelHeight == 164)
         model.create(reducedMotion: reducedMotion)
         model.create(reducedMotion: reducedMotion) // Repeat presses cannot create a second operation.
         for _ in 0..<100 where !model.buttonConfirmed { try await Task.sleep(for: .milliseconds(30)) }
@@ -138,7 +138,7 @@ struct SymlinkerFlowTests {
         #expect(model.source == source && model.destination == destination)
         #expect(model.hasSelectionPair && !model.canCreate)
         #expect(model.existingLink == link)
-        #expect(model.panelHeight == 160)
+        #expect(model.panelHeight == 164)
         #expect(model.createdLink == nil && model.message == nil && model.activeTuning == nil)
         #expect(!model.buttonReady && !model.buttonConfirmed && !model.settled && !model.snapped)
         #expect(!model.isScrubbing && !model.continuousMotion)

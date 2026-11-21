@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Replace all Liquid Glass buttons with Droppy’s flat iOS 18 wash button family (`DroppyWashPillButtonStyle` and `DroppyWashCircleButtonStyle`, `kit.minAPI` 1.21.0) on shelf surfaces and native macOS bordered buttons in settings, popover, and playground surfaces.
+- Increase solo footer button size (`40pt` tall, equal `146 × 40pt` **+ New symlink** and **Show in Finder** pills, `40 × 40pt` leading `<` back circle) in a compact `364pt` solo canvas while keeping both file tiles at `128 × 96pt`, unifying all button labels (including **Name already exists** at `188 × 40pt`) at `13pt` semibold rounded.
+- Center the loading indicator in place of the large tile icon while a file or folder selection is loading.
+- Redesign the paired shelf/home widget into two vertical System-Settings-style tiles with a blue active-step highlight, an animated green confirmation morph (**Create symlink** → **Created** → **Show in Finder**), and a circular `+` button to clear selections and start a new symlink safely, removing the top-left header.
 - Keep both the icon-opened full widget and expanded editor open for Finder drops, releasing holds on navigation/close without pinning the compact shelf widget.
 - Share off-main-thread validation between native pickers and Finder drops, with stale-request protection, drop cancellation/deadlines, balanced access leases and targeted recovery.
 - Check the proposed output before creation; detect existing links without overwriting anything and revalidate at the final filesystem operation.

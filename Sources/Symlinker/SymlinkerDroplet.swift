@@ -512,11 +512,11 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
     func openPlayground() {
         guard acceptsInteractions, !isDemo else { return }
         if let playgroundWindow { playgroundWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 650),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 832, height: 650),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Symlinker animation playground"
         window.isReleasedWhenClosed = false
-        window.contentMinSize = NSSize(width: 760, height: 590)
+        window.contentMinSize = NSSize(width: 772, height: 590)
         window.contentView = NSHostingView(rootView: AnimationPlaygroundView(owner: self))
         let delegate = AnimationPlaygroundWindowDelegate { [weak self] in
             self?.playgroundWindow = nil; self?.playgroundDelegate = nil
@@ -531,7 +531,7 @@ public final class SymlinkerDroplet: NSObject, ObservableObject, Droplet {
 extension SymlinkerDroplet: ShelfWidgetProviding {
     public var widgetDescriptors: [ShelfWidgetDescriptor] {
         [.init(id: "symlinker", title: "Symlinker", systemImage: "link", layoutTraits: .init(
-            preferredSoloWidth: 352, preferredPairedWidth: 210, contentHeight: .fixed(panelHeight)),
+            preferredSoloWidth: SymlinkerMetrics.soloWidth, preferredPairedWidth: 210, contentHeight: .fixed(panelHeight)),
             prewarmPolicy: .never,
             searchKeywords: ["symlink", "symbolic link", "files"])]
     }
@@ -541,7 +541,12 @@ extension SymlinkerDroplet: ShelfWidgetProviding {
             if context.isCompact {
                 SymlinkerCompactWidget(model: self, context: context)
             } else {
-                SymlinkerPanel(model: self, isPreview: context.isPreview, keepsShelfOpen: true)
+                SymlinkerPanel(
+                    model: self,
+                    isPreview: context.isPreview,
+                    keepsShelfOpen: true,
+                    usesAdaptiveForegrounds: context.usesAdaptiveForegrounds
+                )
                     .padding(context.contentInsets)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .allowsHitTesting(!context.isShelfTransitioning)
@@ -554,7 +559,7 @@ extension SymlinkerDroplet: ShelfWidgetProviding {
             Text("Preview and tune the animation without creating links.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             Button("Animation playground…") { self.openPlayground() }
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
         }.padding().frame(width: 260))
     }
 }
@@ -575,9 +580,10 @@ extension SymlinkerDroplet: ExpandedSurfaceHosting, ExpandedSurfaceProviding {
     public func expandedSurfaceSize(_ id: ExpandedSurfaceID, fitting proposal: ExpandedSurfaceSizeProposal) -> CGSize? {
         guard id == "symlinker" else { return nil }
         #if DEBUG
-        if previewsPlayground { return CGSize(width: 820, height: 650) }
+        if previewsPlayground { return CGSize(width: 832, height: 650) }
         #endif
-        return CGSize(width: proposal.standardSize.width, height: panelHeight)
+        let width = min(proposal.maximumSize.width, max(proposal.standardSize.width, SymlinkerMetrics.soloWidth))
+        return CGSize(width: width, height: panelHeight)
     }
     public func expandedSurfaceDidDismiss(_ id: ExpandedSurfaceID, presentation: ExpandedSurfacePresentation, reason: ExpandedSurfaceDismissalReason) {
         guard id == "symlinker", expandedPresentation?.id == presentation.id else { return }
@@ -589,8 +595,8 @@ extension SymlinkerDroplet: ExpandedSurfaceHosting, ExpandedSurfaceProviding {
 #if DEBUG
 public extension SymlinkerDroplet {
     func renderPlayground(to path: String) {
-        let hosting = NSHostingView(rootView: AnimationPlaygroundView(owner: self).frame(width: 820, height: 650))
-        hosting.frame = NSRect(x: 0, y: 0, width: 820, height: 650)
+        let hosting = NSHostingView(rootView: AnimationPlaygroundView(owner: self).frame(width: 832, height: 650))
+        hosting.frame = NSRect(x: 0, y: 0, width: 832, height: 650)
         let window = NSWindow(contentRect: hosting.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentView = hosting; window.setFrameOrigin(NSPoint(x: -30_000, y: -30_000))
         RunLoop.main.run(until: Date().addingTimeInterval(0.9))
@@ -605,6 +611,11 @@ public extension SymlinkerDroplet {
         let state = previewsReducedMotion ? String(state.dropLast(8)) : state
         if state == "playground" { previewsPlayground = true; return }
         guard state != "idle" else { return }
+        if state == "loading" {
+            self.destination = destination
+            loadingRoles = [.source]
+            return
+        }
         if state == "destination" { self.destination = destination; return }
         self.source = source
         if state != "source" { self.destination = destination; preflight = .ready(destination.appendingPathComponent(source.lastPathComponent)) }

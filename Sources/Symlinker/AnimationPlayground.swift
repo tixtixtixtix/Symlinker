@@ -28,11 +28,11 @@ struct AnimationPlaygroundView: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(.white.opacity(0.06)).frame(width: 150, height: 20)
                     SymlinkerPanel(model: demo, previewReducedMotion: reducedMotion)
-                        .frame(width: 352, height: demo.panelHeight).padding(.top, 38)
-                }.frame(width: 384, height: SymlinkerMetrics.panelHeight(hasFooter: true) + 54)
+                        .frame(width: SymlinkerMetrics.soloWidth, height: demo.panelHeight).padding(.top, 38)
+                }.frame(width: SymlinkerMetrics.soloWidth + 32, height: SymlinkerMetrics.panelHeight(hasFooter: true) + 54)
                 HStack {
                     Button { play() } label: { Label("Replay animation", systemImage: "play.fill") }
-                        .buttonStyle(DroppyAccentButtonStyle(color: .white, size: .small))
+                        .buttonStyle(.borderedProminent)
                         .disabled(demo.isCreating)
                     Spacer()
                     Toggle("Loop", isOn: $loop).toggleStyle(.checkbox)
@@ -58,16 +58,16 @@ struct AnimationPlaygroundView: View {
                 HStack {
                     Button(copied ? "Copied" : "Copy settings") {
                         copied = owner.copyText(owner.tuning.summary)
-                    }.buttonStyle(DroppyQuietButtonStyle(size: .small))
+                    }.buttonStyle(.bordered)
                         .disabled(!owner.canCopyPaths)
                     Spacer()
                     Button("Reset defaults") { owner.tuning = .defaults; copied = false }
-                        .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                        .buttonStyle(.bordered)
                 }
                 Text("Changes apply on the next replay and are saved for real links. Copy settings to share your preferred values.")
                     .font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: .infinity, alignment: .leading)
-            }.frame(width: 384)
+            }.frame(width: SymlinkerMetrics.soloWidth + 32)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     group("Duration per animation") {
@@ -150,7 +150,7 @@ private struct AnimationSettingsView: View {
             DropletSettingsCard {
                 DropletControlRow(title: "Animation playground") {
                     Button("Open…") { owner.openPlayground() }
-                        .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                        .buttonStyle(.bordered)
                 }
                 DropletControlRow(title: "Tile sequence duration") {
                     DropletValuePill(text: String(format: "%.2f s", owner.tuning.totalDuration))
