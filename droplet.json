@@ -1,7 +1,7 @@
 {
   "id": "symlinker",
   "name": "Symlinker",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "summary": "Create symbolic links with a satisfying split.",
   "description": "Choose a source file or folder and a destination folder. Symlinker creates a symbolic link while keeping the original in place, with a fluid cell-division animation.",
   "category": "Files",
